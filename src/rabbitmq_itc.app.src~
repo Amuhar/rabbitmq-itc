@@ -1,7 +1,0 @@
-{application, rabbitmq_itc,
-[{description, "RabbitMQ Interval Tree clock"},
-{vsn, "1.2.0"},
-{modules, []},
-{mod, {rabbitmq_itc_app,[]}},
-{registered, []},
-{applications, [kernel, stdlib, rabbit, mnesia]}]}.
