@@ -1,0 +1,71 @@
+<h1>ITC</h1>
+  <div class="section">
+  <h2>Content of database</h2>
+  <div class="hider">
+  <table>
+    <% if (itc_bd.length > 0) { %> 
+      <table class="list">
+        <thead>
+            <tr>
+              <th>ID</th>
+              <th>Type</th>
+              <th>Exchange</th>
+              <th>Queue </th>
+              <th>Node </th>
+              <th>Connection </th>
+              <th>Channel </th>
+              <th>Vhost </th>
+              <th>Username</th>
+              <th>Routing key </th>
+              <th> Properties</th>
+              <th> Payload</th>
+              <th> Stamp</th>
+            </tr>
+        </thead>
+         <tbody>
+              <%
+                 for (var i = 0; i < itc_bd.length; i++) {
+                     var rec = itc_bd[i];
+              %>
+              <% for (var j = 0; j < rec.length ; j++) {  %>
+                <td><%= fmt_string(rec[j]) %></td>
+    
+              <% } %>   
+             </tr>
+             
+              <% } %>
+         </tbody>
+        </table>
+      <% } %>
+  
+  </table>
+  </div>
+</div>
+    <div class="section">
+  <h2>Causality tracking mechanism</h2>
+  <div class="hider">
+  <%if (itc_bd.length > 0) {  %> 
+  <form action="#/itc_bd" method="put"> 
+  <table class="form">
+  <p >Input id of messages: </p>
+    <tr>
+      <th><label> From: </label></th>
+      <td><input type="text" name ="from"/> </td>
+  </tr>
+  <tr>
+      <th><label> To: </label></th>
+      <td> <input type="text" name ="to"/>  </td>
+  </tr>
+  <tr>
+      <th><label> File: </label></th>
+      <td> <input type="text" name ="file"/>  </td>
+  </tr>
+   </table>
+  <input type="submit" value="Find chain of events"/>
+  </form>
+  <% } %>
+ 
+  </div>
+</div>
+
+   

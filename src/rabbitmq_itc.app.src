@@ -3,5 +3,7 @@
 {vsn, "1.2.0"},
 {modules, []},
 {mod, {rabbitmq_itc_app,[]}},
+{env,[{listener,[{port,15675}]}]},
 {registered, []},
-{applications, [kernel, stdlib,amqp_client, rabbit, mnesia]}]}.
+{applications, [kernel, stdlib,amqp_client,rabbit, mnesia,
+ rabbitmq_management]}]}.
