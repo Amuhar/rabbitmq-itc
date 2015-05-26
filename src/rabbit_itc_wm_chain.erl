@@ -15,9 +15,6 @@ content_types_provided(ReqData, Context) ->
 content_types_accepted(ReqData, Context) ->
    {[{"application/json", accept_content}], ReqData, Context}.  
 
-resource_exists(ReqData, Context) ->
-    {true, ReqData, Context}. 
-
 to_json(RD, Context) ->
     {F,T,File} = ids(RD),
     Ids = {F,T},
@@ -33,14 +30,21 @@ allowed_methods(ReqData, Context) ->
     {['HEAD', 'GET', 'PUT'], ReqData, Context}.
 
 accept_content(RD, Ctx) ->
-    {From,To,File} = ids(RD),
-    Reply = rabbitmq_itc:chain({From,To}),
-    {ok,Io} = file:open(File,[append]),
-    A = lists:flatten(io_lib:format("~p", [Reply])),
-    Data = io_lib:format("~s~n",[A]),
-    file:write(Io,Data),
-    file:close(Io),
-    {true, RD, Ctx}.
+V = vhost(RD),
+if 
+    V == none orelse V == "undefined" ->
+             {From,To,File} = ids(RD),
+              Reply = rabbitmq_itc:chain({From,To}),
+              {ok,Io} = file:open(File,[append]),
+              A = lists:flatten(io_lib:format("~p", [Reply])),
+              Data = io_lib:format("~s~n",[A]),
+              file:write(Io,Data),
+              file:close(Io),
+              {true, RD, Ctx};
+    true ->
+          rabbitmq_itc_sup:start_child(V),
+          {true, RD, Ctx}
+end.
 
 is_authorized(ReqData, Context) ->
     rabbit_mgmt_util:is_authorized_admin(ReqData, Context).
@@ -55,4 +59,13 @@ ids(RD) ->
                          {F,T,File ++ ".txt"};
       _ -> none
   end.
+
+vhost(RD) ->
+  PathInfo =wrq:path_info(RD),
+  case [orddict:find(vhost,PathInfo)] of
+      [{ok,Vhost}] -> 
+                         Vhost;
+                 _ ->    none
+  end.
+
 

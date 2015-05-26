@@ -21,14 +21,17 @@
 
 -record(state, {conn, ch,queue,stamp}).
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-start_link([]) -> 
-   gen_server:start_link({local,?MODULE},?MODULE, [], []).
+start_link(Args) -> 
+   gen_server:start_link({local,?MODULE},?MODULE, [Args], []).
 
-
-init(Args) ->
-    {ok, Conn} = amqp_connection:start( #amqp_params_network{}),
+init([Args]) ->
+    {ok, Conn} = 
+        if Args == "%2F" ->
+            amqp_connection:start(#amqp_params_direct{});
+           true ->
+            amqp_connection:start(#amqp_params_direct{virtual_host = list_to_binary(Args)})
+        end,
     link(Conn),
     {ok, Ch} = amqp_connection:open_channel(Conn),
     link(Ch),
@@ -116,11 +119,11 @@ do(Q) ->
 all_table() -> 
 Records = do(qlc:q([X|| X <- mnesia:table(?ITC_TABLE)])),
 lists:map( fun(X) ->
-            [ if I == tuple_size(X) -1 -> 
+            [ if I == tuple_size(X) -2 -> 
                   list_to_binary(lists:flatten(io_lib:format("~p", [element(I,X)])));
                  true -> 
                   element(I,X)
-              end ||I <- lists:seq(2,tuple_size(X) -1 )] end,Records).
+              end ||I <- lists:seq(2,tuple_size(X) -2 )] end,Records).
 
 %% получение цепочки событий 
 
@@ -138,11 +141,11 @@ event_chain(F_id,T_id) ->
       itc:leq(T#log_record.stamp, X#log_record.stamp) orelse 
       X == F orelse X == T ])),
       ListRec = lists:map( fun(X) ->
-                  [ if I == tuple_size(X) -1 -> 
+                  [ if I == tuple_size(X) -2 -> 
                         list_to_binary(lists:flatten(io_lib:format("~p", [element(I,X)])));
                        true -> 
                         element(I,X)
-                    end ||I <- lists:seq(2,tuple_size(X) -1 )] end,Records)
+                    end ||I <- lists:seq(2,tuple_size(X) -2 )] end,Records)
 
   end.
 
@@ -151,41 +154,29 @@ event_chain(F_id,T_id) ->
 header_information(Delivery = { #'basic.deliver'{routing_key = Key,delivery_tag =D}, 
                        #amqp_msg{props = #'P_basic'{headers = H},payload = Payload}}, 
                        State = #state{conn = Conn, ch = Ch}) ->
-         {Type, Q} = case Key of
+   {Type, Q} = case Key of
                     <<"publish.", _Rest/binary>> -> {published, none};
                     <<"deliver.", Rest/binary>>  -> {received,  Rest}
                 end,
-          {longstr, Node} = rabbit_misc:table_lookup(H, <<"node">>),
-          {longstr, X} = rabbit_misc:table_lookup(H, <<"exchange_name">>),
-          {array, Keys} =rabbit_misc:table_lookup(H, <<"routing_keys">>),
-          {table, Props} = rabbit_misc:table_lookup(H, <<"properties">>),
-          {longstr, C} = rabbit_misc:table_lookup(H, <<"connection">>),
-          {longstr, VHost} = rabbit_misc:table_lookup(H, <<"vhost">>),
-          {longstr, User} = rabbit_misc:table_lookup(H, <<"user">>),
-          {signedint, Chan} = rabbit_misc:table_lookup(H, <<"channel">>),
-          {table, Props} = rabbit_misc:table_lookup(H, <<"properties">>),
-	  Rec = #resource{virtual_host = VHost,
-	      				name = X, kind = exchange},
-          Bindings = rabbit_binding:list_for_source( Rec), 
-          Size_of_table = mnesia:table_info(?ITC_TABLE,size),
+   {longstr, Node} = rabbit_misc:table_lookup(H, <<"node">>),
+   {longstr, X} = rabbit_misc:table_lookup(H, <<"exchange_name">>),
+   {array, Keys} =rabbit_misc:table_lookup(H, <<"routing_keys">>),
+   {table, Props} = rabbit_misc:table_lookup(H, <<"properties">>),
+   {longstr, C} = rabbit_misc:table_lookup(H, <<"connection">>),
+   {longstr, VHost} = rabbit_misc:table_lookup(H, <<"vhost">>),
+   {longstr, User} = rabbit_misc:table_lookup(H, <<"user">>),
+   {signedint, Chan} = rabbit_misc:table_lookup(H, <<"channel">>),
+   {table, Props} = rabbit_misc:table_lookup(H, <<"properties">>),
+	Rec = #resource{virtual_host = VHost,name = X, kind = exchange},
+    Bindings = rabbit_binding:list_for_source( Rec), 
+    Size_of_table = mnesia:table_info(?ITC_TABLE,size),
  
-          Record = #log_record{
-                              id = Size_of_table +1, %% --
-                              type = Type, %% --
-                              exchange = X, %% +
-                              queue = Q, %% --
-                              node = Node, %% +
-                              connection = C, %% +
-                              vhost = VHost, %% ++
-                              username = User, %% ++
-                              routing_keys =[K || {_, K} <- Keys], %% ++
-                              payload = Payload, %% --
-                              channel = Chan, %% ++
-                              properties = Props, %% ++
-                              exchange_bindings = Bindings %% -- нужно , чтобы отфильтровать сообщения,  непрошедшие маршрутизацию
-                             },     
-   
-       case Type of 
+    Record = #log_record{ id = Size_of_table +1, type = Type, exchange = X, queue = Q, node = Node, 
+                          connection = C, vhost = VHost, username = User, routing_keys =[K || {_, K} <- Keys],
+                          payload = Payload, channel = Chan, properties = Props, exchange_bindings = Bindings,
+                          ack = false
+                        },     
+    case Type of 
                published -> 
                            {New_record, New_state} = publish_message(Record,State),
                            rabbitmq_log:log(New_record),
@@ -194,7 +185,7 @@ header_information(Delivery = { #'basic.deliver'{routing_key = Key,delivery_tag 
                              {New_record, New_state} = received_message(Record,State),
                              rabbitmq_log:log(New_record),
                              New_state
-            end.
+    end.
 
 
 
@@ -203,7 +194,7 @@ header_information(Delivery = { #'basic.deliver'{routing_key = Key,delivery_tag 
 
 publish_message(Record,State=#state{stamp = User_number}) ->
   {Update_record,New_state} = 
-	 case mnesia:table_info(?ITC_TABLE,size) of 
+	case mnesia:table_info(?ITC_TABLE,size) of 
 			0 -> {New_stamp, User_stamp} = itc:fork(User_number),
                              Add_event_to_stamp = itc:event(User_stamp),
                              Update_record = Record#log_record{stamp = Add_event_to_stamp}, 
@@ -233,64 +224,65 @@ publish_message(Record,State=#state{stamp = User_number}) ->
   {Update_record,New_state}.
 
 
-received_message(Record,State=#state{stamp = User_number }) -> 
-  User_events  = 
-    do(qlc:q([X || X <- mnesia:table(?ITC_TABLE), 
-              X#log_record.node == Record#log_record.node, 
-              X#log_record.connection == Record#log_record.connection,
-              X#log_record.channel == Record#log_record.channel,
-              X#log_record.vhost == Record#log_record.vhost,
-              X#log_record.username == Record#log_record.username])),
-      
-  {ok,X} = rabbit_exchange:lookup(#resource{virtual_host = Record#log_record.vhost,
-  				name = Record#log_record.exchange, kind = exchange}),
-  Possible_produsers = 
-    do(qlc:q([X || X <- mnesia:table(?ITC_TABLE), 
-              X#log_record.exchange == Record#log_record.exchange, 
-              X#log_record.payload == Record#log_record.payload,
-              X#log_record.type == published, X#log_record.exchange_bindings /= []])), 
-  {Mess_count, Last, New_stamp_state,Produsers} =                                  
-  if 
-    User_events == [] ->
-      {New_stamp, User_stamp} = itc:fork(User_number),
-      {0,User_stamp,New_stamp,Possible_produsers};                           
-    true -> 
-      {Consumers,Prod} =  
-      if  X#exchange.type == fanout ->
-          Same_consumers_mess = 
-            lists:filter(fun(X) -> X#log_record.exchange == Record#log_record.exchange andalso
-                          X#log_record.payload == Record#log_record.payload andalso
-                          X#log_record.queue == Record#log_record.queue andalso
-                          X#log_record.type == received end,User_events),  
-          {Same_consumers_mess,Possible_produsers };
-          
-          X#exchange.type == direct orelse X#exchange.type == topic -> 
-          
-          Direct_or_topic_produsers = 
-					 lists:filter(fun(X) ->
-              hd(X#log_record.routing_keys) == hd(Record#log_record.routing_keys) end,Possible_produsers ), %% под вопросом
-          Same_consumers_mess =
-            lists:filter(fun(X) -> 
-                                   X#log_record.exchange == Record#log_record.exchange andalso
-                                   X#log_record.payload == Record#log_record.payload andalso
-                                   X#log_record.queue == Record#log_record.queue andalso
-                                   X#log_record.routing_keys == Record#log_record.routing_keys end, User_events),
-          {Same_consumers_mess,Direct_or_topic_produsers}
-    %%X#exchange.type == headers ->  что с этим делать не знаю                                    
-      end,
-      L = lists:last(User_events),
-      {length(Consumers),L#log_record.stamp,none,Prod} 
-  end,
-  [Produser|_] = lists:nthtail(Mess_count, Produsers),
-  {Event_for_join,Old_stamp} = itc:peek(Produser#log_record.stamp),
-	Receive_message  = itc:join(Event_for_join,Last),
-	New_event = itc:event(Receive_message),
-        Update_record = Record#log_record{stamp = New_event},
-	rabbit_misc:execute_mnesia_transaction(fun () -> mnesia:write(?ITC_TABLE,Update_record,write) end),
-	case New_stamp_state of
-		none -> 
-			{ Update_record,State};
-		_ ->
-			{Update_record,State#state{stamp = New_stamp_state} }
-				
-	end.
+received_message(Record,State=#state{stamp = User_number }) ->
+ {Update_record,New_state} = 
+ case mnesia:table_info(?ITC_TABLE,size) of 
+	0 -> 
+	      {New_stamp, User_stamp} = itc:fork(User_number),
+          Add_event_to_stamp = itc:event(User_stamp),
+          Update_record = Record#log_record{stamp = Add_event_to_stamp}, 
+  		  {Update_record,State#state{ stamp = New_stamp} } ;
+	N -> 
+		User_events  = 
+		do(qlc:q([X || X <- mnesia:table(?ITC_TABLE), 
+		          X#log_record.node == Record#log_record.node, 
+		          X#log_record.connection == Record#log_record.connection,
+		          X#log_record.channel == Record#log_record.channel,
+		          X#log_record.vhost == Record#log_record.vhost,
+		          X#log_record.username == Record#log_record.username])),
+		  
+		{ok,X} = rabbit_exchange:lookup(#resource{virtual_host = Record#log_record.vhost,
+						name = Record#log_record.exchange, kind = exchange}),
+		Possible_produsers = 
+		do(qlc:q([X || X <- mnesia:table(?ITC_TABLE), 
+		          X#log_record.exchange == Record#log_record.exchange, 
+		          X#log_record.payload == Record#log_record.payload,
+		          X#log_record.type == published,
+		          X#log_record.exchange_bindings /= [],
+		          X#log_record.ack == false])), 
+		{Last, New_stamp_state,Produsers} =                                  
+		if 
+		User_events == [] ->
+		  {New_stamp, User_stamp} = itc:fork(User_number),
+		  {User_stamp,New_stamp,Possible_produsers};                           
+		true -> 
+		  Prod =  
+		  if  X#exchange.type == fanout -> 
+		        Possible_produsers;
+		      
+		      X#exchange.type == direct orelse X#exchange.type == topic -> 
+		        Direct_or_topic_produsers = 
+				  lists:filter(fun(X) ->
+		            hd(X#log_record.routing_keys) == hd(Record#log_record.routing_keys) end,Possible_produsers ), 
+		        Direct_or_topic_produsers
+		  end,
+		  L = lists:last(User_events),
+		  {L#log_record.stamp,none,Prod} 
+		end,
+		[Produser|_] =  Produsers,
+		Change_ack =  Produser#log_record{ack = true},
+		rabbit_misc:execute_mnesia_transaction(fun () -> mnesia:write(?ITC_TABLE,Change_ack,write) end),
+		{Event_for_join,Old_stamp} = itc:peek(Produser#log_record.stamp),
+		Receive_message  = itc:join(Event_for_join,Last),
+		New_event = itc:event(Receive_message),
+		Update_record = Record#log_record{stamp = New_event},
+		case New_stamp_state of
+			none -> 
+				{ Update_record,State};
+			_ ->
+				{Update_record,State#state{stamp = New_stamp_state} }
+					
+		end
+ end,
+ rabbit_misc:execute_mnesia_transaction(fun () -> mnesia:write(?ITC_TABLE,Update_record,write) end),
+ {Update_record,New_state}.

@@ -17,13 +17,10 @@ content_types_provided(ReqData, Context) ->
 
 
 to_json(ReqData, Context) ->
-    rabbit_mgmt_util:reply(rabbitmq_itc:all(), ReqData, Context).
+   case lists:member(rabbitmq_itc,registered()) of
+       true -> rabbit_mgmt_util:reply(rabbitmq_itc:all(), ReqData, Context);
+          _ -> rabbit_mgmt_util:reply([], ReqData, Context)
+    end.
 
 is_authorized(ReqData, Context) ->
     rabbit_mgmt_util:is_authorized_admin(ReqData, Context).
-
-
-
-%%--------------------------------------------------------------------
-
-

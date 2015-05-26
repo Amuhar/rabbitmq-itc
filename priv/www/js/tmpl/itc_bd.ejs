@@ -1,4 +1,26 @@
 <h1>ITC</h1>
+<p> select virtual host </p>
+  <div class="section">
+  <div class="hider">
+  <form action="#/itc_bd" method="put"> 
+  <table class="form">
+    <tr>
+          <th><label>Virtual host:</label></th>
+          <td>
+            <select name="vhost">
+              <% for (var i = 0; i < vhosts.length; i++) { %>
+              <option value="<%= fmt_string(vhosts[i].name) %>"><%= fmt_string(vhosts[i].name) %></option>
+              <% } %>
+            </select>
+          </td>
+    </tr>
+ 
+   </table>
+  <input type="submit" value="Start ITC"/>
+  </form>
+ 
+  </div>
+</div>
   <div class="section">
   <h2>Content of database</h2>
   <div class="hider">
@@ -8,6 +30,7 @@
         <thead>
             <tr>
               <th>ID</th>
+              <th>Stamp</th>
               <th>Type</th>
               <th>Exchange</th>
               <th>Queue </th>
@@ -19,7 +42,6 @@
               <th>Routing key </th>
               <th> Properties</th>
               <th> Payload</th>
-              <th> Stamp</th>
             </tr>
         </thead>
          <tbody>
@@ -27,7 +49,9 @@
                  for (var i = 0; i < itc_bd.length; i++) {
                      var rec = itc_bd[i];
               %>
-              <% for (var j = 0; j < rec.length ; j++) {  %>
+               <td><%= fmt_string(rec[0]) %></td>
+                <td><%= fmt_string(rec[rec.length-1]) %></td>
+              <% for (var j = 1; j < rec.length-1 ; j++) {  %>
                 <td><%= fmt_string(rec[j]) %></td>
     
               <% } %>   
@@ -67,5 +91,3 @@
  
   </div>
 </div>
-
-   
