@@ -3,7 +3,7 @@
 -export([start/2, stop/1]).
 
 start(_Type, _StartArgs) ->
-	rabbitmq_itc:start_link([]).
+	rabbitmq_itc_sup:start_link().
 
 stop(_State) ->  
 	ok.
